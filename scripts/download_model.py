@@ -30,8 +30,11 @@ def download_model(model_id: str, output_dir: str = "./models") -> dict:
     print("=" * 70)
     
     try:
+        # Create output directory first
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
         # Download tokenizer
-        print("\n[1/3] Downloading tokenizer...")
+        print("\n[1/4] Downloading tokenizer...")
         tokenizer = AutoTokenizer.from_pretrained(
             model_id,
             trust_remote_code=True
@@ -46,8 +49,13 @@ def download_model(model_id: str, output_dir: str = "./models") -> dict:
         print(f"  - Vocab size: {tokenizer.vocab_size}")
         print(f"  - Pad token: {tokenizer.pad_token}")
         
+        # Save tokenizer to disk
+        print("\n[2/4] Saving tokenizer to disk...")
+        tokenizer.save_pretrained(output_dir)
+        print(f"  ✓ Tokenizer saved to: {output_dir}")
+        
         # Download model
-        print("\n[2/3] Downloading model...")
+        print("\n[3/4] Downloading model...")
         model = AutoModelForSequenceClassification.from_pretrained(
             model_id,
             trust_remote_code=True
@@ -62,6 +70,11 @@ def download_model(model_id: str, output_dir: str = "./models") -> dict:
         print(f"  - Number of parameters: {model.num_parameters():,}")
         print(f"  - Number of labels: {model.config.num_labels}")
         
+        # Save model to disk
+        print(f"\n  Saving model to disk...")
+        model.save_pretrained(output_dir)
+        print(f"  ✓ Model saved to: {output_dir}")
+        
         # Get model size
         model_size_bytes = sum(
             p.numel() * p.element_size() for p in model.parameters()
@@ -72,7 +85,7 @@ def download_model(model_id: str, output_dir: str = "./models") -> dict:
         id2label = model.config.id2label
         label2id = model.config.label2id
         
-        print(f"\n[3/3] Verifying configuration...")
+        print(f"\n[4/4] Verifying configuration...")
         print(f"  ✓ Model size: {model_size_mb:.2f} MB")
         print(f"  ✓ Number of classes: {len(id2label)}")
         
@@ -81,9 +94,6 @@ def download_model(model_id: str, output_dir: str = "./models") -> dict:
         for idx in sorted(id2label.keys())[:5]:
             print(f"    {idx}: {id2label[idx]}")
         print(f"    ... ({len(id2label) - 5} more)")
-        
-        # Create output directory
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
         
         # Save model info
         model_info = {
