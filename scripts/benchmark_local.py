@@ -13,14 +13,19 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 import numpy as np
+import pandas as pd
 from datasets import load_dataset
 from vllm import LLM
 
 
 def load_test_data(dataset_name: str = "codefactory4791/amazon_test", 
                    split: str = "test", 
-                   num_samples: int = 1000) -> tuple:
-    """Load test dataset and return prompts and labels."""
+                   num_samples: int = 1000,
+                   balance_lengths: bool = True) -> tuple:
+    """
+    Load test dataset and return prompts and labels.
+    Optionally balance the dataset to include short, medium, and long sequences.
+    """
     print(f"Loading dataset: {dataset_name} (split={split})")
     
     dataset = load_dataset(dataset_name)
@@ -30,10 +35,52 @@ def load_test_data(dataset_name: str = "codefactory4791/amazon_test",
     if 'query' in df.columns and 'label' in df.columns:
         df = df.rename(columns={'query': 'text', 'label': 'labels'})
     
-    # Sample data
-    if num_samples and num_samples < len(df):
+    # Add text length column
+    df['text_length'] = df['text'].str.len()
+    
+    if balance_lengths and num_samples:
+        # Categorize by length (character count)
+        # Short: < 200 chars, Medium: 200-500 chars, Long: > 500 chars
+        df['length_category'] = 'medium'
+        df.loc[df['text_length'] < 200, 'length_category'] = 'short'
+        df.loc[df['text_length'] > 500, 'length_category'] = 'long'
+        
+        # Calculate samples per category (roughly 1/3 each)
+        samples_per_category = num_samples // 3
+        remainder = num_samples % 3
+        
+        # Sample from each category
+        dfs = []
+        for i, category in enumerate(['short', 'medium', 'long']):
+            cat_df = df[df['length_category'] == category]
+            n_samples = samples_per_category + (1 if i < remainder else 0)
+            
+            if len(cat_df) >= n_samples:
+                sampled = cat_df.sample(n=n_samples, random_state=42)
+            else:
+                # If not enough samples in category, take all and adjust
+                sampled = cat_df
+                print(f"  Warning: Only {len(cat_df)} {category} samples available (requested {n_samples})")
+            
+            dfs.append(sampled)
+        
+        # Combine and shuffle
+        df = pd.concat(dfs, ignore_index=True)
+        df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+        
+        # Print distribution
+        print(f"  Sampled {len(df)} instances with length distribution:")
+        for category in ['short', 'medium', 'long']:
+            count = len(df[df['length_category'] == category])
+            avg_len = df[df['length_category'] == category]['text_length'].mean()
+            print(f"    {category.capitalize()}: {count} samples (avg {avg_len:.0f} chars)")
+    
+    elif num_samples and num_samples < len(df):
+        # Simple random sampling without balancing
         df = df.sample(n=num_samples, random_state=42)
         print(f"  Sampled {num_samples} instances for testing")
+        avg_length = df['text_length'].mean()
+        print(f"    Average length: {avg_length:.0f} characters")
     
     # Extract data
     prompts = df['text'].tolist()
@@ -45,7 +92,7 @@ def load_test_data(dataset_name: str = "codefactory4791/amazon_test",
     df['label_id'] = df['labels'].map(label2id)
     true_labels = df['label_id'].tolist()
     
-    print(f"  ✓ Loaded {len(prompts)} prompts with {len(labels_unique)} classes")
+    print(f"  Loaded {len(prompts)} prompts with {len(labels_unique)} classes")
     
     return prompts, true_labels, id2label
 
@@ -129,6 +176,7 @@ def run_benchmarks(model_id: str,
                    quantization: str, 
                    batch_sizes: List[int],
                    num_samples: int = 1000,
+                   balance_lengths: bool = True,
                    output_dir: str = "./results/local_benchmarks") -> List[Dict]:
     """Run comprehensive benchmarks."""
     print("\n" + "=" * 70)
@@ -138,10 +186,14 @@ def run_benchmarks(model_id: str,
     print(f"Quantization: {quantization}")
     print(f"Batch sizes: {batch_sizes}")
     print(f"Number of samples: {num_samples}")
+    print(f"Balance sequence lengths: {balance_lengths}")
     print("=" * 70)
     
     # Load test data
-    prompts, true_labels, id2label = load_test_data(num_samples=num_samples)
+    prompts, true_labels, id2label = load_test_data(
+        num_samples=num_samples,
+        balance_lengths=balance_lengths
+    )
     
     # Initialize model
     llm = initialize_model(model_id, quantization)
@@ -227,6 +279,18 @@ def main():
         help="Number of samples to use for benchmarking"
     )
     parser.add_argument(
+        "--balance-lengths",
+        action="store_true",
+        default=True,
+        help="Balance dataset with short, medium, and long sequences"
+    )
+    parser.add_argument(
+        "--no-balance-lengths",
+        action="store_false",
+        dest="balance_lengths",
+        help="Disable length balancing (use random sampling)"
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default="./results/local_benchmarks",
@@ -244,10 +308,11 @@ def main():
         quantization=args.quantization,
         batch_sizes=batch_sizes,
         num_samples=args.num_samples,
+        balance_lengths=args.balance_lengths,
         output_dir=args.output_dir
     )
     
-    print("\n✓ Benchmarking complete!")
+    print("\nBenchmarking complete!")
     print(f"\nNext steps:")
     print(f"  1. Review results in: {args.output_dir}/{args.quantization}/")
     print(f"  2. Test other quantization methods")
