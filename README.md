@@ -165,6 +165,7 @@ Note: You will get the RUNPOD_ENDPOINT_ID after creating the endpoint in Step 7.
 ## Step 3: Download and Verify Model
 
 ```bash
+pip install hf_transfer
 python scripts/download_model.py
 ```
 
