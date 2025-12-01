@@ -216,7 +216,7 @@ pip install -r requirements.txt --ignore-installed blinker
 
 ## Step 4 (Optional): Local Benchmarking
 
-Test different quantization methods locally before deploying:
+Test different quantization methods local GPU / Runpod before deploying:
 
 ### Test FP16 Baseline
 
