@@ -41,21 +41,25 @@ def load_test_data(dataset_name: str = "codefactory4791/amazon_test",
     df['text_length'] = df['text'].str.len()
     
     if balance_lengths and num_samples:
-        # Categorize by length (character count)
-        # Short: < 300 chars, Medium: 300-800 chars, Long: > 800 chars
+        # Use adaptive thresholds based on data distribution (percentiles)
+        # This ensures we always get 3 balanced categories
+        p33 = df['text_length'].quantile(0.33)
+        p67 = df['text_length'].quantile(0.67)
+        
+        # Categorize by length using adaptive thresholds
         df['length_category'] = 'medium'
-        df.loc[df['text_length'] < 300, 'length_category'] = 'short'
-        df.loc[df['text_length'] > 800, 'length_category'] = 'long'
+        df.loc[df['text_length'] < p33, 'length_category'] = 'short'
+        df.loc[df['text_length'] > p67, 'length_category'] = 'long'
         
         # Check available samples in each category
         short_available = len(df[df['length_category'] == 'short'])
         medium_available = len(df[df['length_category'] == 'medium'])
         long_available = len(df[df['length_category'] == 'long'])
         
-        print(f"  Available samples by length:")
-        print(f"    Short (< 300 chars): {short_available}")
-        print(f"    Medium (300-800 chars): {medium_available}")
-        print(f"    Long (> 800 chars): {long_available}")
+        print(f"  Adaptive length thresholds (based on percentiles):")
+        print(f"    Short: < {p33:.0f} chars ({short_available} samples)")
+        print(f"    Medium: {p33:.0f}-{p67:.0f} chars ({medium_available} samples)")
+        print(f"    Long: > {p67:.0f} chars ({long_available} samples)")
         
         # Calculate samples per category (roughly 1/3 each)
         samples_per_category = num_samples // 3
@@ -84,7 +88,7 @@ def load_test_data(dataset_name: str = "codefactory4791/amazon_test",
             df = df.sample(frac=1, random_state=42).reset_index(drop=True)
             
             # Print final distribution
-            print(f"  Sampled {len(df)} instances with length distribution:")
+            print(f"\n  Final sampled distribution ({len(df)} total):")
             for category in ['short', 'medium', 'long']:
                 cat_data = df[df['length_category'] == category]
                 count = len(cat_data)
@@ -92,7 +96,8 @@ def load_test_data(dataset_name: str = "codefactory4791/amazon_test",
                     avg_len = cat_data['text_length'].mean()
                     min_len = cat_data['text_length'].min()
                     max_len = cat_data['text_length'].max()
-                    print(f"    {category.capitalize()}: {count} samples (avg {avg_len:.0f}, range {min_len:.0f}-{max_len:.0f} chars)")
+                    print(f"    {category.capitalize()}: {count} samples")
+                    print(f"      Length range: {min_len:.0f}-{max_len:.0f} chars (avg: {avg_len:.0f})")
                 else:
                     print(f"    {category.capitalize()}: 0 samples")
         else:
@@ -122,7 +127,7 @@ def load_test_data(dataset_name: str = "codefactory4791/amazon_test",
 
 def initialize_model(model_id: str, quantization: str = "none", 
                     use_optimizations: bool = True) -> tuple:
-    """Initialize model and tokenizer with specified quantization and optimizations."""
+    """Initialize model and tokenizer - matching reference notebook approach."""
     print(f"\nInitializing model...")
     print(f"  Model: {model_id}")
     print(f"  Quantization: {quantization}")
@@ -131,8 +136,8 @@ def initialize_model(model_id: str, quantization: str = "none",
     start = time.perf_counter()
     
     try:
-        # Load tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        # Load tokenizer (matching reference notebook)
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         
@@ -146,31 +151,25 @@ def initialize_model(model_id: str, quantization: str = "none",
             model = AutoModelForSequenceClassification.from_pretrained(
                 model_id,
                 quantization_config=quantization_config,
-                device_map="auto",
-                trust_remote_code=True
+                device_map="auto"
             )
         elif quantization == "awq":
             model = AutoModelForSequenceClassification.from_pretrained(
                 model_id,
-                device_map="auto",
-                trust_remote_code=True
+                device_map="auto"
             )
         elif quantization == "gptq":
             model = AutoModelForSequenceClassification.from_pretrained(
                 model_id,
-                device_map="auto",
-                trust_remote_code=True
+                device_map="auto"
             )
         else:
-            # No quantization - use FP16
-            model = AutoModelForSequenceClassification.from_pretrained(
-                model_id,
-                torch_dtype=torch.float16,
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
-            )
+            # No quantization - simple loading like reference notebook
+            model = AutoModelForSequenceClassification.from_pretrained(model_id)
             model = model.to(device)
         
+        # Ensure model knows the pad token
+        model.config.pad_token_id = tokenizer.pad_token_id
         model.eval()
         
         # Apply optimizations if enabled and quantization is "none"
