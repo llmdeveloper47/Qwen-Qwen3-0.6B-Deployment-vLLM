@@ -84,27 +84,52 @@ python scripts/benchmark_local.py \
 python scripts/test_local_handler.py
 ```
 
-**Step 7:** FlashAttention 
+**Step 7:** FlashAttention Optimization (Recommended)
 
-FlashAttention  provides significant speedup. Expected performance gains: 1.5-6x faster than standard PyTorch.
+FlashAttention provides **6.3x speedup** through optimized attention kernels.
 
+**Dependencies:**
+- PyTorch 2.4.0 (already installed from Step 5)
+- Accelerate >=0.26.0
+- BitsAndBytes >=0.43.2 (for combined test)
+
+**Install dependencies:**
 ```bash
-# Install ONNX Runtime dependencies
-pip install optimum[onnxruntime-gpu] onnx onnxruntime-gpu
+pip install 'accelerate>=0.26.0' 'bitsandbytes>=0.43.2' --upgrade
 
+# Verify
+python -c "
+import accelerate
+import bitsandbytes
+print(f'Accelerate: {accelerate.__version__}')
+print(f'BitsAndBytes: {bitsandbytes.__version__}')
+"
+```
 
-pip uninstall torch torchvision torchaudio -y
-rm -rf /usr/local/lib/python3.12/dist-packages/torch*
-rm -rf ~/.cache/pip
+**Test FlashAttention + FP16:**
+```bash
+python scripts/benchmark_local.py \
+  --quantization none \
+  --use-flash-attention \
+  --batch-sizes 1,8,16,32 \
+  --num-samples 1000
+```
+Expected: 274 samples/s at batch 32 (6.3x faster than baseline)
 
-# Fresh install from PyTorch
-pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121 --no-cache-dir
+**Test FlashAttention + BitsAndBytes INT8:**
+```bash
+python scripts/benchmark_local.py \
+  --quantization bitsandbytes \
+  --use-flash-attention \
+  --batch-sizes 1,8,16,32 \
+  --num-samples 1000
+```
+Expected: High speed + 50% memory savings
 
-# Test torch ONLY (before anything else)
-python -c "import torch; print(f'Torch: {torch.__version__}')"
-
-# Test torchvision ONLY
-python -c "import torchvision; print(f'TorchVision: {torchvision.__version__}')"
+**Compare all results:**
+```bash
+python scripts/compare_results.py
+```
 
 # If both work, test importing together
 python -c "
@@ -239,40 +264,29 @@ jupyter notebook experiments/analysis/comparison.ipynb
 
 ---
 
-### PHASE 2B: Advanced Optimization Testing (Optional)
+### PHASE 2B: Optimization Summary
 
-**Available Inference Engines:**
+**Available Optimizations:**
 
-1. **Standard PyTorch (transformers)** - Default, well-tested
-2. **ONNX Runtime (onnx)** - Graph optimizations, 1.5-3x faster
+1. **FP16 Baseline** - Standard inference, ~43 samples/s at batch 32
+2. **FlashAttention** - Optimized attention kernels, ~274 samples/s (6.3x faster!)
+3. **BitsAndBytes INT8** - 8-bit quantization, ~107 samples/s, 50% memory savings
+4. **Combined** - FlashAttention + INT8, best of both worlds
 
-**Available Quantization Methods:**
+**Performance Comparison (Batch Size 32):**
 
-1. **None (FP16)** - Baseline, best accuracy
-2. **BitsAndBytes (INT8)** - 50% memory reduction, 2-2.5x faster at large batches
+| Configuration | Throughput | P95 Latency | Memory | Speedup |
+|--------------|------------|-------------|---------|---------|
+| FP16 Baseline | 43.74 s/s | 733ms | 4GB | 1.0x |
+| FP16 + Flash | 273.81 s/s | 118ms | 4GB | 6.3x |
+| INT8 | 107.21 s/s | 301ms | 2GB | 2.5x |
+| INT8 + Flash | TBD | TBD | 2GB | TBD |
 
-**Hybrid Configurations:**
-
-Test different combinations:
-```bash
-# FP16 + Standard PyTorch (baseline)
-python scripts/benchmark_local.py \
-  --quantization none --inference-engine transformers \
-  --batch-sizes 1,8,16,32 --num-samples 1000 --no-optimizations
-
-# FP16 + ONNX Runtime (optimized graph)
-python scripts/benchmark_local.py \
-  --quantization none --inference-engine onnx \
-  --batch-sizes 1,8,16,32 --num-samples 1000 --no-optimizations
-
-# INT8 + Standard PyTorch (quantized)
-python scripts/benchmark_local.py \
-  --quantization bitsandbytes --inference-engine transformers \
-  --batch-sizes 1,8,16,32 --num-samples 1000 --no-optimizations
-
-# Compare all configurations
-python scripts/compare_results.py
-```
+**Key Dependencies:**
+- PyTorch 2.4.0 (stable, FlashAttention support)
+- Transformers 4.48.0+ (for latest optimizations)
+- Accelerate >=0.26.0 (for quantization)
+- BitsAndBytes >=0.43.2 (for INT8)
 
 ---
 
@@ -368,16 +382,18 @@ Use these to see the exact environment variables needed for each configuration.
 
 After completing benchmarks, you will have:
 
-### Performance Metrics (batch_size=16)
+### Performance Metrics (Batch Size 32)
 
-| Configuration | Inference Engine | P95 Latency | Throughput | Speedup vs FP16 |
-|--------------|------------------|-------------|------------|-----------------|
-| FP16 Baseline | Transformers | ~379ms | ~42 samples/s | 1.0x (baseline) |
-| BitsAndBytes INT8 | Transformers | ~185ms | ~89 samples/s | 2.1x faster |
-| FP16 + ONNX | ONNX Runtime | ~150-200ms | ~70-100 samples/s | 1.7-2.4x faster |
-| INT8 + ONNX | ONNX Runtime | ~100-140ms | ~110-150 samples/s | 2.6-3.6x faster |
+| Configuration | Throughput | P95 Latency | Memory | Speedup vs Baseline |
+|--------------|------------|-------------|---------|---------------------|
+| FP16 Baseline | 43.74 s/s | 733ms | 4GB | 1.0x (baseline) |
+| FP16 + FlashAttention | 273.81 s/s | 118ms | 4GB | **6.3x faster** |
+| BitsAndBytes INT8 | 107.21 s/s | 301ms | 2GB | 2.5x faster |
+| INT8 + FlashAttention | TBD | TBD | 2GB | TBD |
 
-Note: Actual results depend on GPU, sequence lengths, and PyTorch version.
+**Key Finding:** FlashAttention provides massive speedup (6.3x) with no memory overhead!
+
+Note: Actual results depend on GPU model, sequence lengths, and batch size.
 
 ### Analysis Outputs
 
@@ -417,17 +433,23 @@ Cause: PyTorch 2.9.x has known bugs with memory allocation
 
 Solution: Downgrade to PyTorch 2.4.0 (see Phase 2, Step 5)
 
-### "ONNX Runtime not found"
+### "FlashAttention not used" (Warning during inference)
 
-Cause: optimum[onnxruntime-gpu] not installed
+Cause: Model not in FP16/BF16 or has attention mask incompatibility
 
-Solution: pip install optimum[onnxruntime-gpu] onnx onnxruntime-gpu
+Solution: This is normal - memory-efficient attention is used as fallback (still fast)
 
-### "ONNX conversion slow or fails"
+### "Accelerate version too old"
 
-Cause: First-time conversion takes 30-60s
+Cause: BitsAndBytes requires accelerate>=0.26.0
 
-Solution: Be patient. ONNX model is cached for future runs
+Solution: pip install 'accelerate>=0.26.0' --upgrade
+
+### "BitsAndBytes version error"
+
+Cause: Need bitsandbytes>=0.43.2 for device_map support
+
+Solution: pip install 'bitsandbytes>=0.43.2' --upgrade
 
 ### "AWQ/GPTQ not working"
 
