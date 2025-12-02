@@ -84,9 +84,9 @@ python scripts/benchmark_local.py \
 python scripts/test_local_handler.py
 ```
 
-**Step 7:** ONNX Runtime Optimization Benchmarks (Optional, Advanced)
+**Step 7:** FlashAttention 
 
-ONNX Runtime provides significant speedup through graph optimizations and operator fusion. Expected performance gains: 1.5-3x faster than standard PyTorch.
+FlashAttention  provides significant speedup. Expected performance gains: 1.5-6x faster than standard PyTorch.
 
 ```bash
 # Install ONNX Runtime dependencies
@@ -116,26 +116,20 @@ print('All imports work!')
 
 # Run ONNX Runtime benchmark
 python scripts/benchmark_local.py \
-  --quantization none \
-  --inference-engine onnx \
+  --quantization bitsandbytes \
+  --use-flash-attention \
   --batch-sizes 1,8,16,32 \
-  --num-samples 1000 \
-  --no-optimizations
-
-# Expected outcomes:
-# - First run: Converts model to ONNX (adds 30-60s)
-# - ONNX model cached to ./models_onnx/none/
-# - Results saved to results/local_benchmarks/none_onnx/
-# - 2-3x speedup at batch size 1
-# - 1.5-2x speedup at larger batches
+  --num-samples 1000
 ```
 
-**How ONNX Runtime Works:**
-- Converts PyTorch model to ONNX graph format
-- Applies graph optimizations (operator fusion, constant folding)
-- Uses optimized CUDA kernels
-- Reduces CPU overhead and kernel launch time
-- Cached for reuse in future runs
+**Step 8:** FlashAttention + BitsAndBytes Benchmarks (Optional, Advanced)
+```bash
+python scripts/benchmark_local.py \
+  --quantization bitsandbytes \
+  --use-flash-attention \
+  --batch-sizes 1,8,16,32 \
+  --num-samples 1000
+```
 
 **Compare all methods:**
 ```bash
