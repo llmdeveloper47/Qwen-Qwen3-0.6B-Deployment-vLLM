@@ -11,7 +11,8 @@ import json
 import argparse
 from pathlib import Path
 from typing import List, Dict, Any
-
+import accelerate
+from transformers import BitsAndBytesConfig
 import numpy as np
 import pandas as pd
 import torch
@@ -166,14 +167,15 @@ def initialize_model(model_id: str, quantization: str = "none",
         
         # Load model with quantization
         if quantization == "bitsandbytes":
-            # Import accelerate explicitly (required for device_map)
-            import accelerate
             from transformers import BitsAndBytesConfig
-            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_enable_fp32_cpu_offload=False
+            )
             model = AutoModelForSequenceClassification.from_pretrained(
                 model_id,
                 quantization_config=quantization_config,
-                device_map="auto"
+                device_map={"": 0}  # Place on GPU 0 directly (bypasses accelerate check)
             )
         else:
             # No quantization - load in FP16 for FlashAttention compatibility
